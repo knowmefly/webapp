@@ -1,56 +1,39 @@
-#!uer/bin/env python3
-# -*- coding:utf-8 -*-
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-import asyncio,os,inspect,logging,functools
+import asyncio, os, inspect, logging, functools
 
 from urllib import parse
 
 from aiohttp import web
 
-from apis import APIError
+#from apis import APIError
 
-# #编写装饰函数
-# @asyncio.coroutine
-# def handle_url_xxx(request):
-#     pass
-
-# #传入参数
-# url_param = request.match_info['key']
-# query_params = parse_qs(request.query_string)
-
-# #构建Response对象
-# text = render('template', data)
-# return web.Response(text.encode('utf-8'))
-
-#定义get（）函数
 def get(path):
-	'''
-	Define decorator @get('/path')
-	'''
-	def decorator(func):
-		@functools.wraps(func)
-		def wrapper(*args,**kw):
-			return func(*args,**kw)
+    '''
+    Define decorator @get('/path')
+    '''
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kw):
+            return func(*args, **kw)
+        wrapper.__method__ = 'GET'
+        wrapper.__route__ = path
+        return wrapper
+    return decorator
 
-		wrapper.__method__ = 'GET'
-		wrapper.__route__ = path
-		return wrapper
-	return decorator
-
-#定义post（）函数
 def post(path):
-	'''
-	Define decorator @post('/path')
-	'''
-	def decorator(func):
-		@functools.wraps(func)
-		def wrapper(*args,**kw):
-			return func(*args,**kw)
-
-		wrapper.__method__ = 'POST'
-		wrapper.__route__ = path
-		return wrapper
-	return decorator
+    '''
+    Define decorator @post('/path')
+    '''
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kw):
+            return func(*args, **kw)
+        wrapper.__method__ = 'POST'
+        wrapper.__route__ = path
+        return wrapper
+    return decorator
 
 def get_required_kw_args(fn):
     args = []
@@ -92,7 +75,6 @@ def has_request_arg(fn):
             raise ValueError('request parameter must be the last named parameter in function: %s%s' % (fn.__name__, str(sig)))
     return found
 
-#处理request的参数转化为web.Response 满足aiohttp要求
 class RequestHandler(object):
 
     def __init__(self, app, fn):
@@ -156,11 +138,10 @@ class RequestHandler(object):
         except APIError as e:
             return dict(error=e.error, data=e.data, message=e.message)
 
-#添加静态变量
 def add_static(app):
-	path = os.path.join(os.path.dirname(os.path.abspath(__file__)),'static')
-	app.router.add_static('/static/', path)
-	logging.info('add static %s => %s' %('/static/',path))
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+    app.router.add_static('/static/', path)
+    logging.info('add static %s => %s' % ('/static/', path))
 
 def add_route(app, fn):
     method = getattr(fn, '__method__', None)
@@ -172,29 +153,19 @@ def add_route(app, fn):
     logging.info('add route %s %s => %s(%s)' % (method, path, fn.__name__, ', '.join(inspect.signature(fn).parameters.keys())))
     app.router.add_route(method, path, RequestHandler(app, fn))
 
-#自动扫描
-#简单扫描
-# add_route(app,handles.index)
-# add_route(app,handles.blog)
-# add_route(app,handles.create_comment)
-# ...
-
-#定义自动扫描
-def add_routes(app,module_name):
-	n = module_name.rfind('.')
-	if n == (-1):
-		mod = __import__(module_name,globals(),locals())
-	else:
-		name = module_name[n+1:]
-		mod = getattr(__import__(module_name[:n],globals(),locals(),[name]),name)
-	for attr in dir(mod):
-		if attr.startswith('_'):
-			continue
-		fn = getattr(mod,attr)
-		if callable(fn):
-			method = getattr(fn,'__method__',None)
-			path = getattr(fn,'__route__',None)
-			if method and path:
-				add_route(app,fn)
-
-		
+def add_routes(app, module_name):
+    n = module_name.rfind('.')
+    if n == (-1):
+        mod = __import__(module_name, globals(), locals())
+    else:
+        name = module_name[n+1:]
+        mod = getattr(__import__(module_name[:n], globals(), locals(), [name]), name)
+    for attr in dir(mod):
+        if attr.startswith('_'):
+            continue
+        fn = getattr(mod, attr)
+        if callable(fn):
+            method = getattr(fn, '__method__', None)
+            path = getattr(fn, '__route__', None)
+            if method and path:
+                add_route(app, fn)
