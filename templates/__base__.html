@@ -3,6 +3,7 @@
 <html>
 <head>
 	<meta charset="utf-8"/>
+	{% block meta %}<!-- block meta  -->{% endblock %}
 	<title>{% block title%}{% endblock %}</title>
 	<link rel="stylesheet" type="text/css" href="/static/css/uikit.min.css">
 	<link rel="stylesheet" type="text/css" href="/static/css/uikit.gradient.min.css">
@@ -11,6 +12,7 @@
 	<script src="/static/js/md5.js"></script>
 	<script src="/static/js/uikit.min.js"></script>
 	<script src="/static/js/awesome.js"></script>
+	{% block beforehead %}<!-- before head  -->{% endblock %}
 </head>
 <body>
 	<nav class="uk-navbar uk-navbar-attached uk--margin-bottom">
@@ -64,6 +66,5 @@
             </div>
         </div>
     </div>
-		<!-- {% block content %} 定义一个空的block {% endblock %} -->
 </body>
 </html>
