@@ -46,7 +46,6 @@ def post(path):
 		@functools.wraps(func)
 		def wrapper(*args,**kw):
 			return func(*args,**kw)
-
 		wrapper.__method__ = 'POST'
 		wrapper.__route__ = path
 		return wrapper

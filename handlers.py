@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # 执行程序
-
+import markdown2
 import re,time,json,logging,hashlib,base64,asyncio
 
 from apis import APIValueError, APIResourceNotFoundError, APIError
@@ -18,6 +18,11 @@ from config import configs
 COOKIE_NAME = 'awesession'
 _COOKIE_KEY = configs.session.secret
 
+#检测权限
+def check_admin(request):
+    if request.__user__ is None or not request.__user__.admin:
+        raise APIPermissionError()
+
 #cookie设置
 def user2cookie(user, max_age):
     '''
@@ -30,42 +35,73 @@ def user2cookie(user, max_age):
     return '-'.join(L)
 #解密cookie
 async def cookie2user(cookie_str):
+    '''
+    Parse cookie and load user if cookie is valid.
+    '''
     if not cookie_str:
         return None
     try:
         L = cookie_str.split('-')
         if len(L) != 3:
             return None
-        uid, expires, sha1 =L
+        uid, expires, sha1 = L
+        if int(expires) < time.time():
+            return None
+        user = await User.find(uid)
         if user is None:
             return None
         s = '%s-%s-%s-%s' % (uid, user.passwd, expires, _COOKIE_KEY)
         if sha1 != hashlib.sha1(s.encode('utf-8')).hexdigest():
-            logging.info('Invalid sha1')
+            logging.info('invalid sha1')
             return None
         user.passwd = '******'
         return user
     except Exception as e:
         logging.exception(e)
         return None
+# async def cookie2user(cookie_str):
+#     if not cookie_str:
+#         return None
+#     try:
+#         L = cookie_str.split('-')
+#         if len(L) != 3:
+#             return None
+#         uid, expires, sha1 =L
+#         if user is None:
+#             return None
+#         s = '%s-%s-%s-%s' % (uid, user.passwd, expires, _COOKIE_KEY)
+#         if sha1 != hashlib.sha1(s.encode('utf-8')).hexdigest():
+#             logging.info('Invalid sha1')
+#             return None
+#         user.passwd = '******'
+#         return user
+#     except Exception as e:
+#         logging.exception(e)
+#         return None
 
 #构建虚拟数据
 @get('/')
 async def index(request):
-	# users = await User.findAll()
-	summary = 'Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'
-	blogs = [
-		Blog(id='1', name='Test Blog', summary=summary,created_at=time.time()-120),
-		Blog(id='2', name='Something New', summary=summary, created_at=time.time()-3600 ),
-		Blog(id='3', name='Learn Swift', summary=summary, created_at=time.time()-7200)
-	]
-	
-	
-	return{
-		'__template__':'blogs.html',
-		'blogs':blogs
-	}
-
+    # users = await User.findAll()
+    summary = 'Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'
+    blogs = [
+        Blog(id='1', name='Test Blog', summary=summary,created_at=time.time()-120),
+        Blog(id='2', name='Something New', summary=summary, created_at=time.time()-3600 ),
+        Blog(id='3', name='Learn Swift', summary=summary, created_at=time.time()-7200)
+    ]
+    cookie_str=request.cookies.get(COOKIE_NAME)
+    user=''
+    if cookie_str:
+        if 'deleted' in cookie_str:
+            user=''
+        else:
+            user= await cookie2user(cookie_str)
+    return {
+        '__template__':'blogs.html',
+        'blogs':blogs,
+        # 'page':page,
+        '__user__':user
+    }
 #注册用户路由
 @get('/register')
 async def register():
@@ -140,3 +176,44 @@ async def api_register_user(*, email, name, passwd):
     r.content_type = 'application/json'
     r.body = json.dumps(user, ensure_ascii=False).encode('utf-8')
     return r
+
+#查看内容路由
+@get('/blog/{id}')
+async def get_blog(id):
+    blog = await Blog.find(id)
+    comments = await Comment.findAll('blog_id=?', [id], orderBy='created_at desc')
+    for c in comments:
+        c.html_content = text2html(c.content)
+    blog.html_content = markdown2.markdown(blog.content)
+    return {
+        '__template__': 'blog.html',
+        'blog': blog,
+        'comments': comments
+    }
+#查看内容API
+@get('/api/blogs/{id}')
+async def api_get_blog(*, id):
+    blog = await Blog.find(id)
+    return blog
+
+#创建文章路由
+@get('/manage/blogs/create')
+def manage_create_blog():
+    return {
+        '__template__': 'manage_blog_edit.html',
+        'id': '',
+        'action': '/api/blogs'
+    }
+#创建文章API
+@post('/api/blogs')
+async def api_create_blog(request, *, name, summary, content):
+    # check_admin(request)
+    if not name or not name.strip():
+        raise APIValueError('name', 'name cannot be empty.')
+    if not summary or not summary.strip():
+        raise APIValueError('summary', 'summary cannot be empty.')
+    if not content or not content.strip():
+        raise APIValueError('content', 'content cannot be empty.')
+    blog = Blog(user_id=request.__user__.id, user_name=request.__user__.name, user_image=request.__user__.image, name=name.strip(), summary=summary.strip(), content=content.strip())
+    await blog.save()
+    return blog
