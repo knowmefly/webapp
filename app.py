@@ -59,19 +59,20 @@ async def auth_factory(app, handler):
             if user:
                 logging.info('set current user: %s' % user.email)
                 request.__user__ = user
-        if request.path.startswith('/manage/') and (request.__user__ is None or not request.__user__.admin):
-            return web.HTTPFound('/signin')
+        # if request.path.startswith('/manage/') and (request.__user__ is None or not request.__user__.admin):
+        #     return web.HTTPFound('/signin')
         return (await handler(request))
     return auth
 #data空间
 async def data_factory(app,handler):
 	async def parse_data(request):
-		if request.content_type.startswith('appliction/json'):
-			request.__data__ = await request.json()
-			logging.info('request json: %s' %str(request.__data__))
-		elif request.content_type.startswith('appliction/x-www-form-urlencoded'):
-			request.__data__ = await request.post()
-			logging.info('request from: %s' %str(request.__data__))
+		if request.method =='POST':	
+			if request.content_type.startswith('appliction/json'):
+				request.__data__ = await request.json()
+				logging.info('request json: %s' %str(request.__data__))
+			elif request.content_type.startswith('appliction/x-www-form-urlencoded'):
+				request.__data__ = await request.post()
+				logging.info('request from: %s' %str(request.__data__))
 		return (await handler(request))
 	return parse_data
 
@@ -99,7 +100,7 @@ async def response_factory(app, handler):
                 resp.content_type = 'application/json;charset=utf-8'
                 return resp
             else:
-                r['__user__'] = r.get('__user__')
+                r['__user__'] = request.__user__
                 resp = web.Response(body=app['__templating__'].get_template(template).render(**r).encode('utf-8'))
                 resp.content_type = 'text/html;charset=utf-8'
                 return resp
@@ -145,7 +146,7 @@ def datetime_filter(t):
 async def init(loop):
 	await orm.create_pool(loop=loop,host='127.0.0.1',port=3306,user='root',password='',db='awesome')
 	app = web.Application(loop=loop,middlewares=[
-		logger_factory,response_factory
+		logger_factory,response_factory,data_factory,auth_factory
 		])
 	init_jinja2(app,filters=dict(datetime=datetime_filter))
 	add_routes(app,'handlers')

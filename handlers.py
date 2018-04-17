@@ -5,7 +5,7 @@
 import markdown2
 import re,time,json,logging,hashlib,base64,asyncio
 
-from apis import APIValueError, APIResourceNotFoundError, APIError
+from apis import APIValueError, APIResourceNotFoundError, APIError, Page
 
 from coroweb import get,post
 
@@ -23,6 +23,16 @@ def check_admin(request):
     if request.__user__ is None or not request.__user__.admin:
         raise APIPermissionError()
 
+#获取文章数量
+def get_page_index(page_str):
+    p = 1
+    try:
+        p = int(page_str)
+    except ValueError as e:
+        pass
+    if p < 1:
+        p = 1
+    return p
 #cookie设置
 def user2cookie(user, max_age):
     '''
@@ -59,25 +69,6 @@ async def cookie2user(cookie_str):
     except Exception as e:
         logging.exception(e)
         return None
-# async def cookie2user(cookie_str):
-#     if not cookie_str:
-#         return None
-#     try:
-#         L = cookie_str.split('-')
-#         if len(L) != 3:
-#             return None
-#         uid, expires, sha1 =L
-#         if user is None:
-#             return None
-#         s = '%s-%s-%s-%s' % (uid, user.passwd, expires, _COOKIE_KEY)
-#         if sha1 != hashlib.sha1(s.encode('utf-8')).hexdigest():
-#             logging.info('Invalid sha1')
-#             return None
-#         user.passwd = '******'
-#         return user
-#     except Exception as e:
-#         logging.exception(e)
-#         return None
 
 #构建虚拟数据
 @get('/')
@@ -89,18 +80,11 @@ async def index(request):
         Blog(id='2', name='Something New', summary=summary, created_at=time.time()-3600 ),
         Blog(id='3', name='Learn Swift', summary=summary, created_at=time.time()-7200)
     ]
-    cookie_str=request.cookies.get(COOKIE_NAME)
-    user=''
-    if cookie_str:
-        if 'deleted' in cookie_str:
-            user=''
-        else:
-            user= await cookie2user(cookie_str)
     return {
         '__template__':'blogs.html',
         'blogs':blogs,
         # 'page':page,
-        '__user__':user
+        '__user__': request.__user__
     }
 #注册用户路由
 @get('/register')
@@ -190,7 +174,33 @@ async def get_blog(id):
         'blog': blog,
         'comments': comments
     }
+
+#管理页面
+@get('/manage/blogs')
+def manage_blogs(*, page='1'):
+    return {
+        '__template__': 'manage_blogs.html',
+        'page_index': get_page_index(page)
+    }
 #查看内容API
+@get('/api/blogs')
+async def api_blogs(*, page='1'):
+    page_index = get_page_index(page)
+    num = await Blog.findNumber('count(id)')
+    p = Page(num, page_index)
+    if num == 0:
+        return dict(page=p, blogs=())
+    blogs = await Blog.findAll(orderBy='created_at desc', limit=(p.offset, p.limit))
+    return dict(page=p, blogs=blogs)
+
+#删除内容
+@post('/api/blogs/{id}/delete')
+async def api_delete_blog(request, *, id):
+    check_admin(request)
+    blog = await Blog.find(id)
+    await blog.remove()
+    return dict(id=id)
+#存储文章
 @get('/api/blogs/{id}')
 async def api_get_blog(*, id):
     blog = await Blog.find(id)
@@ -198,7 +208,7 @@ async def api_get_blog(*, id):
 
 #创建文章路由
 @get('/manage/blogs/create')
-def manage_create_blog():
+async def manage_create_blog(request):
     return {
         '__template__': 'manage_blog_edit.html',
         'id': '',
@@ -207,7 +217,7 @@ def manage_create_blog():
 #创建文章API
 @post('/api/blogs')
 async def api_create_blog(request, *, name, summary, content):
-    # check_admin(request)
+    check_admin(request)
     if not name or not name.strip():
         raise APIValueError('name', 'name cannot be empty.')
     if not summary or not summary.strip():
@@ -217,3 +227,13 @@ async def api_create_blog(request, *, name, summary, content):
     blog = Blog(user_id=request.__user__.id, user_name=request.__user__.name, user_image=request.__user__.image, name=name.strip(), summary=summary.strip(), content=content.strip())
     await blog.save()
     return blog
+
+#删除评论
+@post('/api/comments/{id}/delete')
+async def api_delete_comments(id, request):
+    check_admin(request)
+    c = await Comment.find(id)
+    if c is None:
+        raise APIResourceNotFoundError('Comment')
+    await c.remove()
+    return dict(id=id)
